@@ -48,11 +48,11 @@ export default defineConfig([
     ignores: ['**/build/**', '**/dist/**', 'node_modules/'],
   },
   {
-    ...(perfectionist as any).configs['recommended-natural'],
+    ...perfectionist.configs['recommended-natural'],
     files: ['**/*.{js,mjs,cjs,ts,mts,cts}'],
     ignores: ['**/build/**', '**/dist/**', 'node_modules/'],
     rules: {
-      ...(perfectionist as any).configs['recommended-natural'].rules,
+      ...perfectionist.configs['recommended-natural'].rules,
       '@typescript-eslint/consistent-type-imports': 'error',
       '@typescript-eslint/no-explicit-any': 'off',
       '@typescript-eslint/no-unused-vars': [
@@ -65,5 +65,5 @@ export default defineConfig([
       ],
       curly: 'error',
     },
-  } as any,
+  },
 ]);
