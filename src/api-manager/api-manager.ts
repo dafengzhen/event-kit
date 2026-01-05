@@ -288,7 +288,10 @@ export class APIManager {
   }
 
   private createApiError(code: string, message?: string, cause?: unknown): ApiError {
-    return { cause, code, message };
+    const derivedMessage =
+      message ?? (cause instanceof Error ? cause.message : cause != null ? String(cause) : undefined);
+
+    return { cause, code, message: derivedMessage };
   }
 
   private emit<K extends keyof ApiEvents>(event: K, payload: ApiEvents[K]): void {
