@@ -13,11 +13,13 @@ export interface APIConfig {
   adapter: AdapterFactory;
   baseURL?: string;
   defaultHeaders?: Record<string, string>;
-  maxRedirects?: number;
+  extConfig?: Record<string, unknown> & {
+    fetch?: Record<string, unknown>;
+    xhr?: Record<string, unknown>;
+  };
   querySerializer?: QuerySerializer;
   timeout?: number;
   validateStatus?: (status?: number) => boolean;
-  withCredentials?: boolean;
 }
 
 export interface ApiError {
@@ -102,17 +104,8 @@ export interface CancellationToken {
   throwIfCancelled: () => void;
 }
 
-export type ConfigMerger = (defaults: Partial<APIConfig>, overrides: Partial<APIConfig>) => APIConfig;
-
 export interface HttpAdapter {
-  send: <T>(req: ApiRequest) => Promise<ApiResponse<T>>;
-}
-
-export interface InterceptorManager {
-  clear: () => void;
-  eject: (interceptor: ApiInterceptor) => void;
-  getInterceptors: () => ApiInterceptor[];
-  use: <T = any>(interceptor: ApiInterceptor<T>) => () => void;
+  send: <T>(request: ApiRequest) => Promise<ApiResponse<T>>;
 }
 
 export type QueryPrimitive = boolean | null | number | string | undefined;
@@ -131,5 +124,3 @@ export type SerializeOptions = {
   arrayFormat?: 'brackets' | 'repeat';
   skipEmptyString?: boolean;
 };
-
-export type URLBuilder = (baseURL: string, path: string, params?: Record<string, QueryValue>) => string;

@@ -1,26 +1,34 @@
-import type { APIConfig, ApiRequest, ApiResponse, HttpAdapter } from './types/api.ts';
+import type { ApiRequest, ApiResponse, HttpAdapter } from './types/api.ts';
 
-export function createFetchAdapter(_config: APIConfig): HttpAdapter {
-  return {
-    async send<T>(request: ApiRequest<T>): Promise<ApiResponse<T>> {
-      const { body, data, headers, method, signal, url } = request;
+/**
+ * FetchAdapter.
+ *
+ * @author dafengzhen
+ */
+export class FetchAdapter implements HttpAdapter {
+  async send<T>(request: ApiRequest): Promise<ApiResponse<T>> {
+    const { body, config, data, headers, method, signal, url } = request;
 
-      const res = await fetch(url, {
-        body: body ?? (data == null ? undefined : JSON.stringify(data)),
-        headers,
-        method,
-        signal,
-      });
+    const { extConfig } = config || {};
+    const { fetch: fetchConfig } = extConfig || {};
+    const { responseType, ...initConfig } = fetchConfig as Record<string, any> & RequestInit;
 
-      const contentType = res.headers.get('content-type') || '';
-      const payload = contentType.includes('application/json') ? await res.json() : await res.text();
+    const res = await fetch(url, {
+      body: body ?? (data == null ? undefined : JSON.stringify(data)),
+      headers,
+      method,
+      signal,
+      ...initConfig,
+    });
 
-      return {
-        data: payload as T,
-        headers: Object.fromEntries(res.headers.entries()),
-        status: res.status,
-        statusText: res.statusText,
-      };
-    },
-  };
+    const contentType = res.headers.get('content-type') || '';
+    const payload = contentType.includes('application/json') ? await res.json() : await res.text();
+
+    return {
+      data: payload as T,
+      headers: Object.fromEntries(res.headers.entries()),
+      status: res.status,
+      statusText: res.statusText,
+    };
+  }
 }
