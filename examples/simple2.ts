@@ -1,31 +1,31 @@
-import { EventEmitter } from '../src/index.ts';
+import { TypedEventBus, type Types } from '../src/index.ts';
 
-type Events = {
-  'order.created': { payload: { orderId: string } };
-  'user.created': { payload: { id: string } };
-  'user.deleted': { payload: { id: string } };
+type Events = Types.EventMapBase & {
+  'order.created': { orderId: string };
+  'user.created': { id: string };
+  'user.deleted': { id: string };
 };
 
-const emitter = new EventEmitter<Events>();
+const bus = new TypedEventBus<Events>();
 
-emitter.on('user.created', async (payload) => {
+bus.on('user.created', async (payload) => {
   console.log(payload);
 });
 
-emitter.match('user.*', async (payload) => {
+bus.onPattern('*', async (payload) => {
   console.log('any user event', payload);
 });
 
-emitter.use(async (ctx, next) => {
+bus.use(async (ctx, next) => {
   const start = Date.now();
-  console.log('[event]', ctx.eventName, ctx.payload);
+  console.log('[event]', ctx.event, ctx.payload);
   try {
     await next();
-    console.log('[event-ok]', ctx.eventName, Date.now() - start, 'ms');
+    console.log('[event-ok]', ctx.event, Date.now() - start, 'ms');
   } catch (e) {
-    console.error('[event-error]', ctx.eventName, e);
+    console.error('[event-error]', ctx.event, e);
     throw e;
   }
 });
 
-await emitter.emit('user.created', { id: '123' });
+bus.emit('user.created', { id: '123' });

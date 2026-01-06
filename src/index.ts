@@ -7,14 +7,7 @@ import {
   DEFAULT_CONFIG,
   HttpMethod,
 } from './api-manager/index.ts';
-import {
-  EventEmitter,
-  Executor,
-  ExecutorCancelledError,
-  ExecutorError,
-  ExecutorTimeoutError,
-  Types,
-} from './core/index.ts';
+import { TypedEventBus, Types } from './core/index.ts';
 
 export {
   APIManager,
@@ -23,11 +16,7 @@ export {
   buildURLWithParams,
   CancellationTokenImpl,
   DEFAULT_CONFIG,
-  EventEmitter,
-  Executor,
-  ExecutorCancelledError,
-  ExecutorError,
-  ExecutorTimeoutError,
   HttpMethod,
+  TypedEventBus,
   Types,
 };

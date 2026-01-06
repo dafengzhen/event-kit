@@ -1,4 +1,4 @@
-import type { BaseEventDefinitions, EventWithPayload } from '../../core/types.ts';
+import type { EventMapBase } from '../../core/types.ts';
 import type { HttpMethod } from '../constants/http-method.ts';
 
 export type ActiveRequestEntry = {
@@ -26,35 +26,35 @@ export interface ApiError {
   message?: string;
 }
 
-export interface ApiEvents extends BaseEventDefinitions {
-  'api:end': EventWithPayload<{
+export type ApiEvents = EventMapBase & {
+  'api:end': {
     duration: number;
     request: ApiRequest;
     response?: ApiResponse;
     timestamp: number;
-  }>;
-  'api:error': EventWithPayload<{
+  };
+  'api:error': {
     error: ApiError;
     request: ApiRequest;
     response?: ApiResponse;
     timestamp: number;
-  }>;
-  'api:start': EventWithPayload<{
+  };
+  'api:start': {
     request: ApiRequest;
     timestamp: number;
-  }>;
-  'api:success': EventWithPayload<{
+  };
+  'api:success': {
     duration: number;
     request: ApiRequest;
     response: ApiResponse;
     timestamp: number;
-  }>;
-  'api:timeout': EventWithPayload<{
+  };
+  'api:timeout': {
     request: ApiRequest;
     timeout: number;
     timestamp: number;
-  }>;
-}
+  };
+};
 
 export interface ApiInterceptor<T = any> {
   onError?: (err: ApiError) => ApiError | Promise<ApiError>;

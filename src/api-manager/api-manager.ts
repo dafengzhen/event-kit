@@ -12,7 +12,7 @@ import type {
   QueryValue,
 } from './types/api.ts';
 
-import { EventEmitter } from '../core/index.ts';
+import { TypedEventBus } from '../core/index.ts';
 import { DEFAULT_CONFIG } from './constants/default-config.ts';
 import { HttpMethod } from './constants/http-method.ts';
 import { buildURL, buildURLWithParams } from './utils/helpers.ts';
@@ -29,7 +29,7 @@ export class APIManager {
 
   private config: APIConfig;
 
-  private eventEmitter = new EventEmitter<ApiEvents>();
+  private eventEmitter = new TypedEventBus<ApiEvents>();
 
   private interceptors: ApiInterceptor[] = [];
 
@@ -155,10 +155,6 @@ export class APIManager {
     return this.request({ data, method: HttpMethod.PUT, url, ...config });
   }
 
-  removeAllListeners(event?: keyof ApiEvents): void {
-    this.eventEmitter.removeAllListeners(event);
-  }
-
   async request<T = any, TParams extends Record<string, QueryValue> = Record<string, QueryValue>>(
     request: Partial<ApiRequest<T, TParams>>,
   ): Promise<ApiResponse<T>> {
@@ -173,9 +169,7 @@ export class APIManager {
     }
 
     try {
-      this.emit('api:start', {
-        payload: { request: fullRequest, timestamp: startTime },
-      });
+      this.emit('api:start', { request: fullRequest, timestamp: startTime });
 
       this.storeActiveRequest(requestId, fullRequest, prepared.controller, prepared.timeoutId);
 
@@ -194,30 +188,24 @@ export class APIManager {
 
       if (isValid) {
         this.emit('api:success', {
-          payload: {
-            duration,
-            request: processedRequest,
-            response: processedResponse,
-            timestamp: Date.now(),
-          },
+          duration,
+          request: processedRequest,
+          response: processedResponse,
+          timestamp: Date.now(),
         });
       } else {
         const error = this.createApiError('ERROR', `Request failed with status code ${processedResponse.status}.`);
         const errorResponse: ApiResponse<T> = { ...processedResponse, error };
 
         this.emit('api:error', {
-          payload: {
-            error,
-            request: processedRequest,
-            response: errorResponse,
-            timestamp: Date.now(),
-          },
+          error,
+          request: processedRequest,
+          response: errorResponse,
+          timestamp: Date.now(),
         });
       }
 
-      this.emit('api:end', {
-        payload: { duration, request: processedRequest, response: processedResponse, timestamp: Date.now() },
-      });
+      this.emit('api:end', { duration, request: processedRequest, response: processedResponse, timestamp: Date.now() });
 
       this.removeActiveRequest(requestId);
 
@@ -234,21 +222,17 @@ export class APIManager {
       };
 
       this.emit('api:error', {
-        payload: {
-          error,
-          request: fullRequest,
-          response: errorResponse,
-          timestamp: Date.now(),
-        },
+        error,
+        request: fullRequest,
+        response: errorResponse,
+        timestamp: Date.now(),
       });
 
       this.emit('api:end', {
-        payload: {
-          duration,
-          request: fullRequest,
-          response: errorResponse,
-          timestamp: Date.now(),
-        },
+        duration,
+        request: fullRequest,
+        response: errorResponse,
+        timestamp: Date.now(),
       });
 
       this.removeActiveRequest(requestId);
@@ -375,11 +359,9 @@ export class APIManager {
         timeoutId = setTimeout(() => {
           controller?.abort(`Request timeout after ${mergedRequest.timeout}ms.`);
           this.emit('api:timeout', {
-            payload: {
-              request: mergedRequest,
-              timeout: mergedRequest.timeout!,
-              timestamp: Date.now(),
-            },
+            request: mergedRequest,
+            timeout: mergedRequest.timeout!,
+            timestamp: Date.now(),
           });
         }, mergedRequest.timeout);
       }
