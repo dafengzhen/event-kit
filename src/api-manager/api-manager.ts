@@ -51,7 +51,13 @@ export class APIManager {
       return buildURLWithParams(baseURL, path, params, this.config.querySerializer);
     }
 
-    return buildURL(baseURL, path);
+    const url = buildURL(baseURL, path);
+
+    if (!url) {
+      throw this.createApiError('ERROR', 'Request url is required.');
+    }
+
+    return url;
   }
 
   cancelAllRequests(reason?: string): void {

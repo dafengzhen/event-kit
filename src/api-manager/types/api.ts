@@ -13,10 +13,6 @@ export interface APIConfig {
   adapter: AdapterFactory;
   baseURL?: string;
   defaultHeaders?: Record<string, string>;
-  extConfig?: Record<string, unknown> & {
-    fetch?: Record<string, unknown>;
-    xhr?: Record<string, unknown>;
-  };
   querySerializer?: QuerySerializer;
   timeout?: number;
   validateStatus?: (status?: number) => boolean;
@@ -78,6 +74,7 @@ export interface ApiRequest<
   meta?: TMeta;
   method: HttpMethod;
   params?: TParams;
+  responseType?: 'arraybuffer' | 'blob' | 'formData' | 'json' | 'text';
   signal?: AbortSignal;
   timeout?: number;
   url: string;
@@ -102,6 +99,11 @@ export interface CancellationToken {
   readonly reason?: string;
   register: (callback: (reason?: string) => void) => void;
   throwIfCancelled: () => void;
+}
+
+export interface FetchAdapterConfig extends RequestInit {
+  responseTransformer?: <T>(response: Response, request: ApiRequest) => Promise<T>;
+  responseType?: 'arraybuffer' | 'blob' | 'formData' | 'json' | 'text';
 }
 
 export interface HttpAdapter {
