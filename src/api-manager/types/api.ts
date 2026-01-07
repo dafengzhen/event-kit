@@ -1,4 +1,5 @@
 import type { EventMapBase } from '../../core/types.ts';
+import type { ApiError } from '../api-error.ts';
 import type { HttpMethod } from '../constants/http-method.ts';
 
 export type ActiveRequestEntry = {
@@ -18,10 +19,16 @@ export interface APIConfig {
   validateStatus?: (status?: number) => boolean;
 }
 
-export interface ApiError {
-  cause?: unknown;
-  code: 'ERROR' | string;
-  message?: string;
+export type ApiErrorCode = string;
+
+export interface ApiErrorContext {
+  extra?: Record<string, unknown>;
+  method?: string;
+  requestId?: string;
+  status?: number;
+  statusText?: string;
+  traceId?: string;
+  url?: string;
 }
 
 export type ApiEvents = EventMapBase & {

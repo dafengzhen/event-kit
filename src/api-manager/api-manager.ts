@@ -2,7 +2,8 @@ import type {
   ActiveRequestEntry,
   AdapterFactory,
   APIConfig,
-  ApiError,
+  ApiErrorCode,
+  ApiErrorContext,
   ApiEvents,
   ApiInterceptor,
   ApiRequest,
@@ -13,6 +14,7 @@ import type {
 } from './types/api.ts';
 
 import { TypedEventBus } from '../core/index.ts';
+import { ApiError } from './api-error.ts';
 import { DEFAULT_CONFIG } from './constants/default-config.ts';
 import { HttpMethod } from './constants/http-method.ts';
 import { buildURL, buildURLWithParams } from './utils/helpers.ts';
@@ -54,7 +56,7 @@ export class APIManager {
     const url = buildURL(baseURL, path);
 
     if (!url) {
-      throw this.createApiError('ERROR', 'Request url is required.');
+      throw this.createApiError('ERROR', 'Request url is required.', undefined, { url });
     }
 
     return url;
@@ -200,7 +202,18 @@ export class APIManager {
           timestamp: Date.now(),
         });
       } else {
-        const error = this.createApiError('ERROR', `Request failed with status code ${processedResponse.status}.`);
+        const error = this.createApiError(
+          'ERROR',
+          `Request failed with status code ${processedResponse.status}.`,
+          undefined,
+          {
+            method: processedRequest.method,
+            requestId: processedRequest.meta?.requestId as string | undefined,
+            status: processedResponse.status,
+            statusText: processedResponse.statusText,
+            url: processedRequest.url,
+          },
+        );
         const errorResponse: ApiResponse<T> = { ...processedResponse, error };
 
         this.emit('api:error', {
@@ -218,7 +231,12 @@ export class APIManager {
       return processedResponse;
     } catch (e) {
       const duration = Date.now() - startTime;
-      const error = this.createApiError('ERROR', undefined, e);
+      const error = this.createApiError('ERROR', undefined, e, {
+        extra: { duration },
+        method: fullRequest.method,
+        requestId: fullRequest.meta?.requestId as string | undefined,
+        url: fullRequest.url,
+      });
 
       const errorResponse: ApiResponse<T> = {
         config: this.config,
@@ -277,11 +295,11 @@ export class APIManager {
     return typeof adapterFactory === 'function' ? adapterFactory(this.config) : adapterFactory;
   }
 
-  private createApiError(code: string, message?: string, cause?: unknown): ApiError {
+  private createApiError(code: ApiErrorCode, message?: string, cause?: unknown, context?: ApiErrorContext): ApiError {
     const derivedMessage =
-      message ?? (cause instanceof Error ? cause.message : cause != null ? String(cause) : undefined);
+      (message ?? (cause instanceof Error ? cause.message : cause != null ? String(cause) : '')) || 'Unknown API error';
 
-    return { cause, code, message: derivedMessage };
+    return new ApiError(code, derivedMessage, { cause, context });
   }
 
   private emit<K extends keyof ApiEvents>(event: K, payload: ApiEvents[K]): void {

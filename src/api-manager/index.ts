@@ -1,3 +1,4 @@
+import { ApiError } from './api-error.ts';
 import { APIManager, CancellationTokenImpl } from './api-manager.ts';
 import { DEFAULT_CONFIG } from './constants/default-config.ts';
 import { HttpMethod } from './constants/http-method.ts';
@@ -15,6 +16,7 @@ import {
 import { XHRAdapter } from './xhr-adapter.ts';
 
 export {
+  ApiError,
   APIManager,
   buildURL,
   buildURLWithParams,

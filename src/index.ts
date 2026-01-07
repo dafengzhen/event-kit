@@ -1,4 +1,5 @@
 import {
+  ApiError,
   APIManager,
   Types as APIManagerTypes,
   buildURL,
@@ -17,6 +18,7 @@ import {
 import { TypedEventBus, Types } from './core/index.ts';
 
 export {
+  ApiError,
   APIManager,
   APIManagerTypes,
   buildURL,
