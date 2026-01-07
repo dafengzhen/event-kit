@@ -5,8 +5,14 @@ import {
   buildURLWithParams,
   CancellationTokenImpl,
   DEFAULT_CONFIG,
+  defaultSerializeParams,
   FetchAdapter,
+  getHeader,
   HttpMethod,
+  prepareRequestBody,
+  removeHeader,
+  setHeader,
+  XHRAdapter,
 } from './api-manager/index.ts';
 import { TypedEventBus, Types } from './core/index.ts';
 
@@ -17,8 +23,14 @@ export {
   buildURLWithParams,
   CancellationTokenImpl,
   DEFAULT_CONFIG,
+  defaultSerializeParams,
   FetchAdapter,
+  getHeader,
   HttpMethod,
+  prepareRequestBody,
+  removeHeader,
+  setHeader,
   TypedEventBus,
   Types,
+  XHRAdapter,
 };

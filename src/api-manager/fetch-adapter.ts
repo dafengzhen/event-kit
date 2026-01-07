@@ -1,4 +1,6 @@
-import type { ApiRequest, ApiResponse, FetchAdapterConfig, HttpAdapter } from './types/api.ts';
+import type { ApiRequest, ApiResponse, FetchAdapterConfig, HttpAdapter, ResponseType } from './types/api.ts';
+
+import { prepareRequestBody } from './utils/helpers.ts';
 
 /**
  * FetchAdapter.
@@ -6,7 +8,7 @@ import type { ApiRequest, ApiResponse, FetchAdapterConfig, HttpAdapter } from '.
  * @author dafengzhen
  */
 export class FetchAdapter implements HttpAdapter {
-  private config: FetchAdapterConfig;
+  private readonly config: FetchAdapterConfig;
 
   constructor(config: FetchAdapterConfig = {}) {
     this.config = {
@@ -16,32 +18,35 @@ export class FetchAdapter implements HttpAdapter {
   }
 
   async send<T>(request: ApiRequest): Promise<ApiResponse<T>> {
-    const { url } = request;
-
-    const config = this.mergeConfigWithRequest(request);
-
-    const requestInit = await this.buildRequestInitFromRequest(request, config);
-
-    const response = await fetch(url, requestInit);
-
-    return await this.handleResponse<T>(response, request, config);
+    const requestInit = await this.buildRequestInitFromRequest(request);
+    const response = await fetch(request.url, requestInit);
+    return await this.handleResponse<T>(response, request);
   }
 
-  private async buildRequestInitFromRequest(request: ApiRequest, config: FetchAdapterConfig): Promise<RequestInit> {
+  private async buildRequestInitFromRequest(request: ApiRequest): Promise<RequestInit> {
     const { body, data, headers, method, signal } = request;
+
+    const normalizedHeaders = headers ? { ...headers } : undefined;
 
     let requestBody: BodyInit | undefined;
 
     if (body !== undefined) {
       requestBody = body;
     } else if (data !== undefined) {
-      requestBody = this.prepareRequestBody(data, headers!);
+      requestBody = prepareRequestBody(data, normalizedHeaders || {});
     }
 
     const requestInit: RequestInit = {
-      headers,
-      method,
+      ...this.pickFetchInit(this.config),
     };
+
+    if (method !== undefined) {
+      requestInit.method = method;
+    }
+
+    if (normalizedHeaders !== undefined) {
+      requestInit.headers = normalizedHeaders;
+    }
 
     if (requestBody !== undefined) {
       requestInit.body = requestBody;
@@ -49,131 +54,101 @@ export class FetchAdapter implements HttpAdapter {
 
     if (signal) {
       requestInit.signal = signal;
-    } else if (config.signal) {
-      requestInit.signal = config.signal;
     }
 
-    return {
-      ...config,
-      ...requestInit,
-    };
+    return requestInit;
   }
 
-  private determineResponseType(contentType: string): 'arraybuffer' | 'blob' | 'formData' | 'json' | 'text' {
-    if (contentType.includes('application/json')) {
+  private determineResponseType(contentType: string): ResponseType {
+    const ct = (contentType || '').toLowerCase();
+
+    if (ct.includes('application/json') || ct.includes('+json')) {
       return 'json';
-    } else if (contentType.includes('multipart/form-data')) {
+    }
+
+    if (ct.includes('multipart/form-data')) {
       return 'formData';
-    } else if (contentType.includes('image/') || contentType.includes('application/octet-stream')) {
+    }
+
+    if (ct.startsWith('image/') || ct.includes('application/octet-stream')) {
       return 'blob';
-    } else if (contentType.includes('text/')) {
+    }
+
+    if (ct.startsWith('text/')) {
       return 'text';
     }
 
     return 'text';
   }
 
-  private async extractResponseData<T>(response: Response, responseType?: string): Promise<T> {
-    if (response.status === 201 || response.status === 204) {
-      return undefined as T;
-    }
-
-    if (!response.body) {
-      return undefined as T;
-    }
-
+  private async extractResponseData<T>(response: Response, responseType?: ResponseType): Promise<T> {
     const contentType = response.headers.get('content-type') || '';
+    const actualType = responseType || this.determineResponseType(contentType);
 
-    const actualResponseType = responseType || this.determineResponseType(contentType);
-
-    switch (actualResponseType) {
+    switch (actualType) {
       case 'arraybuffer':
-        return response.arrayBuffer() as Promise<T>;
+        return (await response.arrayBuffer()) as T;
       case 'blob':
-        return response.blob() as Promise<T>;
+        return (await response.blob()) as T;
       case 'formData':
-        return response.formData() as Promise<T>;
+        return (await response.formData()) as T;
       case 'text':
-        return response.text() as Promise<T>;
+        return (await response.text()) as T;
       case 'json':
-      default:
-        try {
-          const text = await response.text();
-          return text ? JSON.parse(text) : (undefined as T);
-        } catch (_error) {
-          const text = await response.text();
-          return text as T;
+      default: {
+        const text = await response.text();
+        if (!text) {
+          return undefined as T;
         }
+
+        try {
+          return JSON.parse(text) as T;
+        } catch {
+          return text as unknown as T;
+        }
+      }
     }
   }
 
-  private async handleResponse<T>(
-    response: Response,
-    request: ApiRequest,
-    fetchConfig: FetchAdapterConfig,
-  ): Promise<ApiResponse<T>> {
+  private async handleResponse<T>(response: Response, request: ApiRequest): Promise<ApiResponse<T>> {
     const headers: Record<string, string> = {};
     response.headers.forEach((value, key) => {
       headers[key] = value;
     });
 
-    let data: T;
+    let data: T = undefined as T;
 
-    if (fetchConfig.responseTransformer) {
-      data = await fetchConfig.responseTransformer<T>(response, request);
-    } else {
-      const responseType = request.responseType ?? fetchConfig.responseType;
-      data = await this.extractResponseData<T>(response, responseType);
+    if (!this.shouldSkipBodyParsing(response, request)) {
+      if (this.config.responseTransformer) {
+        data = await this.config.responseTransformer<T>(response, request);
+      } else {
+        const responseType = request.responseType || this.config.responseType;
+        data = await this.extractResponseData<T>(response, responseType);
+      }
     }
 
     return {
       data,
       headers,
-      request,
       status: response.status,
       statusText: response.statusText,
     };
   }
 
-  private mergeConfigWithRequest(request: ApiRequest): FetchAdapterConfig {
-    const { config } = request;
-    return {
-      ...this.config,
-      ...config,
-    };
+  private pickFetchInit(config: FetchAdapterConfig): RequestInit {
+    const { responseTransformer: _responseTransformer, responseType: _responseType, ...rest } = config;
+    return rest;
   }
 
-  private prepareRequestBody(data: any, headers: Record<string, string>): BodyInit {
-    const contentType = headers['Content-Type'] || headers['content-type'];
-
-    if (contentType) {
-      if (contentType.includes('application/json')) {
-        return JSON.stringify(data);
-      } else if (contentType.includes('application/x-www-form-urlencoded')) {
-        if (data instanceof URLSearchParams) {
-          return data.toString();
-        } else if (typeof data === 'object') {
-          const params = new URLSearchParams();
-          Object.entries(data).forEach(([key, value]) => {
-            if (value !== null && value !== undefined) {
-              params.append(key, String(value));
-            }
-          });
-          return params.toString();
-        }
-      } else if (contentType.includes('multipart/form-data') && data instanceof FormData) {
-        return data;
-      }
+  private shouldSkipBodyParsing(response: Response, request: ApiRequest): boolean {
+    if (request.method?.toUpperCase() === 'HEAD') {
+      return true;
     }
 
-    if (data instanceof FormData || data instanceof Blob || data instanceof ArrayBuffer) {
-      return data;
-    } else if (data instanceof URLSearchParams) {
-      return data.toString();
-    } else if (typeof data === 'object') {
-      return JSON.stringify(data);
-    } else {
-      return String(data);
+    if (response.status === 204 || response.status === 205 || response.status === 304) {
+      return true;
     }
+
+    return !response.body;
   }
 }

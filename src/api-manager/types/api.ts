@@ -74,7 +74,7 @@ export interface ApiRequest<
   meta?: TMeta;
   method: HttpMethod;
   params?: TParams;
-  responseType?: 'arraybuffer' | 'blob' | 'formData' | 'json' | 'text';
+  responseType?: ResponseType;
   signal?: AbortSignal;
   timeout?: number;
   url: string;
@@ -103,7 +103,7 @@ export interface CancellationToken {
 
 export interface FetchAdapterConfig extends RequestInit {
   responseTransformer?: <T>(response: Response, request: ApiRequest) => Promise<T>;
-  responseType?: 'arraybuffer' | 'blob' | 'formData' | 'json' | 'text';
+  responseType?: ResponseType;
 }
 
 export interface HttpAdapter {
@@ -122,7 +122,19 @@ export type QueryValue =
   | QueryPrimitive[]
   | { [key: string]: QueryPrimitive | QueryPrimitive[] };
 
+export type ResponseType = 'arraybuffer' | 'blob' | 'formData' | 'json' | 'text';
+
 export type SerializeOptions = {
   arrayFormat?: 'brackets' | 'repeat';
   skipEmptyString?: boolean;
 };
+
+export interface XHRAdapterConfig {
+  onDownloadProgress?: (evt: ProgressEvent<EventTarget>, request: ApiRequest) => void;
+  onUploadProgress?: (evt: ProgressEvent<EventTarget>, request: ApiRequest) => void;
+  responseTransformer?: <T>(xhr: XMLHttpRequest, request: ApiRequest) => Promise<T> | T;
+  responseType?: ResponseType;
+  withCredentials?: boolean;
+}
+
+export type XhrResponseType = '' | 'arraybuffer' | 'blob' | 'document' | 'json' | 'text';

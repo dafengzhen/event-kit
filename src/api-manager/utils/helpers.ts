@@ -1,6 +1,6 @@
 import type { QuerySerializer, QueryValue, SerializeOptions } from '../types/api.ts';
 
-export function buildURL(baseURL: string = '', path: string = ''): string {
+export const buildURL = (baseURL: string = '', path: string = ''): string => {
   if (!baseURL) {
     return path || '';
   }
@@ -16,14 +16,14 @@ export function buildURL(baseURL: string = '', path: string = ''): string {
     const normalizedPath = path.replace(/^\/+/, '');
     return `${normalizedBase}/${normalizedPath}`;
   }
-}
+};
 
-export function buildURLWithParams(
+export const buildURLWithParams = (
   baseURL: string,
   path: string,
   params?: Record<string, QueryValue>,
   serializer?: QuerySerializer,
-): string {
+): string => {
   const url = buildURL(baseURL, path);
   if (!params) {
     return url;
@@ -44,9 +44,9 @@ export function buildURLWithParams(
 
   const separator = url.includes('?') ? '&' : '?';
   return url + separator + queryString;
-}
+};
 
-function defaultSerializeParams(params: Record<string, QueryValue>, options: SerializeOptions = {}): string {
+export const defaultSerializeParams = (params: Record<string, QueryValue>, options: SerializeOptions = {}): string => {
   const { arrayFormat = 'brackets', skipEmptyString = false } = options;
   const sp = new URLSearchParams();
 
@@ -114,4 +114,104 @@ function defaultSerializeParams(params: Record<string, QueryValue>, options: Ser
   }
 
   return sp.toString();
-}
+};
+
+export const prepareRequestBody = (data: any, headers: Record<string, string>): BodyInit => {
+  const contentType = getHeader(headers, 'content-type');
+
+  if (contentType) {
+    const ct = contentType.toLowerCase();
+
+    if (ct.includes('application/json') || ct.includes('+json')) {
+      return JSON.stringify(data);
+    }
+
+    if (ct.includes('application/x-www-form-urlencoded')) {
+      if (data instanceof URLSearchParams) {
+        return data.toString();
+      }
+
+      if (typeof data === 'object' && data != null) {
+        const params = new URLSearchParams();
+        Object.entries(data).forEach(([key, value]) => {
+          if (value !== null && value !== undefined) {
+            params.append(key, String(value));
+          }
+        });
+        return params.toString();
+      }
+    }
+
+    if (ct.includes('multipart/form-data') && data instanceof FormData) {
+      return data;
+    }
+  }
+
+  if (data instanceof FormData) {
+    const existing = getHeader(headers, 'content-type');
+    if (existing?.toLowerCase().includes('multipart/form-data')) {
+      for (const k of Object.keys(headers)) {
+        if (k.toLowerCase() === 'content-type') {
+          delete headers[k];
+        }
+      }
+    }
+    return data;
+  }
+
+  if (data instanceof Blob) {
+    return data;
+  }
+
+  if (data instanceof ArrayBuffer || ArrayBuffer.isView(data)) {
+    return data as BodyInit;
+  }
+
+  if (data instanceof URLSearchParams) {
+    return data.toString();
+  }
+
+  if (typeof data === 'object' && data != null) {
+    if (!getHeader(headers, 'content-type')) {
+      setHeader(headers, 'Content-Type', 'application/json');
+    }
+
+    return JSON.stringify(data);
+  }
+
+  if (!getHeader(headers, 'content-type')) {
+    setHeader(headers, 'Content-Type', 'text/plain');
+  }
+
+  return String(data);
+};
+
+export const getHeader = (headers: Record<string, string>, name: string): string | undefined => {
+  const lower = name.toLowerCase();
+  for (const k of Object.keys(headers)) {
+    if (k.toLowerCase() === lower) {
+      return headers[k];
+    }
+  }
+  return undefined;
+};
+
+export const setHeader = (headers: Record<string, string>, name: string, value: string): void => {
+  const lower = name.toLowerCase();
+  for (const k of Object.keys(headers)) {
+    if (k.toLowerCase() === lower) {
+      headers[k] = value;
+      return;
+    }
+  }
+  headers[name] = value;
+};
+
+export const removeHeader = (headers: Record<string, string>, name: string): void => {
+  const lower = name.toLowerCase();
+  for (const k of Object.keys(headers)) {
+    if (k.toLowerCase() === lower) {
+      delete headers[k];
+    }
+  }
+};
