@@ -172,11 +172,11 @@ export class APIManager {
     const prepared = this.prepareRequest(request, requestId);
     const fullRequest = prepared.request;
 
-    if (fullRequest.cancellationToken) {
-      fullRequest.cancellationToken.throwIfCancelled();
-    }
-
     try {
+      if (fullRequest.cancellationToken) {
+        fullRequest.cancellationToken.throwIfCancelled();
+      }
+
       this.emit('api:start', { request: fullRequest, timestamp: startTime });
 
       this.storeActiveRequest(requestId, fullRequest, prepared.controller, prepared.timeoutId);

@@ -1,3 +1,7 @@
+/**
+ * @jest-environment node
+ */
+
 import { describe, expect, jest, test } from '@jest/globals';
 
 import type { EventMapBase } from './types.ts';
@@ -22,6 +26,11 @@ const setup = () => {
   return { bus };
 };
 
+/**
+ * TypedEventBus.
+ *
+ * @author dafengzhen
+ */
 describe('TypedEventBus', () => {
   test('on/emit: exact handler should receive payload', async () => {
     const { bus } = setup();
