@@ -163,7 +163,7 @@ describe('TypedEventBus', () => {
     bus.on('user:create', () => steps.push('handler'));
 
     bus.emit('user:create', { id: 'u1' });
-    await flush();
+    await flush(2);
 
     expect(steps).toEqual(['mw1:before', 'mw2:before', 'handler', 'mw2:after', 'mw1:after']);
   });

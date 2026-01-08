@@ -3,6 +3,7 @@ export type AnyHandler<E extends EventMapBase> = <K extends keyof E>(event: K, p
 export type EmitContext<E extends EventMapBase, K extends keyof E> = {
   blocked?: boolean;
   event: K;
+  matched: PatternEntry<E>[];
   meta?: Record<string, unknown>;
   payload: E[K];
 };
@@ -26,6 +27,27 @@ export type Middleware<E extends EventMapBase> = <K extends keyof E>(
 
 export type Pattern<_K extends string> = '*' | `${string}:*`;
 
-export type PrefixHandler<E extends EventMapBase> = <K extends keyof E>(event: K, payload: E[K]) => void;
+export type PatternEntry<E extends EventMapBase> = {
+  handler: (event: keyof E, payload: E[keyof E]) => void;
+  kind: PatternKind;
+  once?: boolean;
+  prefix?: string;
+  priority: number;
+};
 
-export type StarHandler<E extends EventMapBase> = <K extends keyof E>(event: K, payload: E[K]) => void;
+export type PatternEntryInternal<E extends EventMapBase> = {
+  handler: (event: keyof E, payload: E[keyof E]) => void;
+  kind: PatternKind;
+  once?: boolean;
+  pattern: string;
+  prefix?: string;
+  prefixWithColon?: string;
+  priority: number;
+};
+
+export type PatternKind = 'prefix' | 'star';
+
+export type PatternMiddleware<E extends EventMapBase> = (
+  ctx: EmitContext<E, keyof E> & { matched: PatternEntry<E>[] },
+  next: () => Promise<void>,
+) => Promise<void> | void;

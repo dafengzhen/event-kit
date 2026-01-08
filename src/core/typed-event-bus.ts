@@ -7,8 +7,8 @@ import type {
   MatchKeys,
   Middleware,
   Pattern,
-  PrefixHandler,
-  StarHandler,
+  PatternEntryInternal,
+  PatternMiddleware,
 } from './types.ts';
 
 /**
@@ -23,17 +23,17 @@ export class TypedEventBus<E extends EventMapBase> {
 
   private middlewares: Middleware<E>[] = [];
 
-  private prefixHandlers = new Map<string, Set<PrefixHandler<E>>>();
+  private patternMiddlewares: PatternMiddleware<E>[] = [];
 
-  private starHandlers = new Set<StarHandler<E>>();
+  private patterns: PatternEntryInternal<E>[] = [];
 
   clear(event?: keyof E): void {
     if (event === undefined) {
       this.exact.clear();
       this.anyHandlers.clear();
-      this.starHandlers.clear();
-      this.prefixHandlers.clear();
+      this.patterns.length = 0;
       this.middlewares.length = 0;
+      this.patternMiddlewares.length = 0;
       return;
     }
 
@@ -42,7 +42,7 @@ export class TypedEventBus<E extends EventMapBase> {
 
   emit<K extends keyof E>(event: K, ...args: E[K] extends void ? [] : [payload: E[K]]): void {
     const payload = (args[0] as E[K]) ?? (undefined as E[K]);
-    const ctx: EmitContext<E, K> = { event, meta: undefined, payload };
+    const ctx: EmitContext<E, K> = { event, matched: [], meta: undefined, payload };
 
     this.runMiddlewares(ctx).catch((err) => {
       queueMicrotask(() => {
@@ -53,7 +53,7 @@ export class TypedEventBus<E extends EventMapBase> {
 
   async emitAsync<K extends keyof E>(event: K, ...args: E[K] extends void ? [] : [payload: E[K]]): Promise<void> {
     const payload = (args[0] as E[K]) ?? (undefined as E[K]);
-    const ctx: EmitContext<E, K> = { event, meta: undefined, payload };
+    const ctx: EmitContext<E, K> = { event, matched: [], meta: undefined, payload };
     await this.runMiddlewares(ctx);
   }
 
@@ -67,10 +67,21 @@ export class TypedEventBus<E extends EventMapBase> {
       return;
     }
 
-    set.delete(handler as ExactHandler<E, K>);
-
+    set.delete(handler);
     if (set.size === 0) {
       this.exact.delete(event);
+    }
+  }
+
+  offPattern<P extends Pattern<Extract<keyof E, string>>>(
+    pattern: P,
+    handler: (event: keyof E, payload: E[keyof E]) => void,
+  ): void {
+    for (let i = this.patterns.length - 1; i >= 0; i--) {
+      const p = this.patterns[i];
+      if (p.pattern === pattern && p.handler === handler) {
+        this.patterns.splice(i, 1);
+      }
     }
   }
 
@@ -92,32 +103,37 @@ export class TypedEventBus<E extends EventMapBase> {
     return off;
   }
 
+  oncePattern<P extends Pattern<Extract<keyof E, string>>>(
+    pattern: P,
+    handler: <K extends keyof E & MatchKeys<Extract<keyof E, string>, P>>(event: K, payload: E[K]) => void,
+    options?: { priority?: number },
+  ): () => void {
+    return this.onPattern(pattern, handler, { ...options, once: true });
+  }
+
   onPattern<P extends Pattern<Extract<keyof E, string>>>(
     pattern: P,
     handler: <K extends keyof E & MatchKeys<Extract<keyof E, string>, P>>(event: K, payload: E[K]) => void,
+    options?: { once?: boolean; priority?: number },
   ): () => void {
     const info = this.parsePattern(pattern);
 
-    if (info.kind === 'star') {
-      const h = handler as unknown as StarHandler<E>;
-      this.starHandlers.add(h);
-      return () => this.starHandlers.delete(h);
-    }
+    const entry: PatternEntryInternal<E> = {
+      handler: handler as any,
+      kind: info.kind,
+      once: options?.once,
+      pattern,
+      prefix: info.kind === 'prefix' ? info.prefix : undefined,
+      prefixWithColon: info.kind === 'prefix' ? `${info.prefix}:` : undefined,
+      priority: options?.priority ?? 0,
+    };
 
-    const h = handler as unknown as PrefixHandler<E>;
-    const set = this.getPrefixSet(info.prefix);
-    set.add(h);
+    this.insertPatternSorted(entry);
 
     return () => {
-      const s = this.prefixHandlers.get(info.prefix);
-      if (!s) {
-        return;
-      }
-
-      s.delete(h);
-
-      if (s.size === 0) {
-        this.prefixHandlers.delete(info.prefix);
+      const idx = this.patterns.indexOf(entry);
+      if (idx >= 0) {
+        this.patterns.splice(idx, 1);
       }
     };
   }
@@ -132,11 +148,20 @@ export class TypedEventBus<E extends EventMapBase> {
     };
   }
 
+  usePattern(mw: PatternMiddleware<E>): () => void {
+    this.patternMiddlewares.push(mw);
+    return () => {
+      const i = this.patternMiddlewares.indexOf(mw);
+      if (i >= 0) {
+        this.patternMiddlewares.splice(i, 1);
+      }
+    };
+  }
+
   private callHandlers<K extends keyof E>(event: K, payload: E[K]): void {
-    // exact
-    const set = this.exact.get(event) as Set<ExactHandler<E, K>> | undefined;
-    if (set?.size) {
-      for (const fn of Array.from(set)) {
+    const set = this.exact.get(event);
+    if (set) {
+      for (const fn of set) {
         try {
           fn(payload);
         } catch (e) {
@@ -147,51 +172,53 @@ export class TypedEventBus<E extends EventMapBase> {
       }
     }
 
-    // any
-    if (this.anyHandlers.size) {
-      for (const fn of Array.from(this.anyHandlers)) {
-        try {
-          fn(event, payload);
-        } catch (e) {
-          queueMicrotask(() => {
-            throw e;
-          });
-        }
+    for (const fn of this.anyHandlers) {
+      try {
+        fn(event, payload);
+      } catch (e) {
+        queueMicrotask(() => {
+          throw e;
+        });
+      }
+    }
+  }
+
+  private async callPatternHandlers(ctx: EmitContext<E, keyof E>): Promise<void> {
+    const matched: PatternEntryInternal<E>[] = [];
+    for (const p of this.patterns) {
+      if (this.matchPattern(p, ctx.event)) {
+        matched.push(p);
       }
     }
 
-    // star
-    if (this.starHandlers.size) {
-      for (const fn of Array.from(this.starHandlers)) {
-        try {
-          fn(event, payload);
-        } catch (e) {
-          queueMicrotask(() => {
-            throw e;
-          });
-        }
-      }
-    }
+    ctx.matched = matched;
 
-    // prefix
-    if (typeof event === 'string') {
-      const idx = event.indexOf(':');
-      if (idx > 0) {
-        const prefix = event.slice(0, idx);
-        const set = this.prefixHandlers.get(prefix);
-        if (set?.size) {
-          for (const fn of Array.from(set)) {
-            try {
-              fn(event, payload);
-            } catch (e) {
-              queueMicrotask(() => {
-                throw e;
-              });
+    let i = -1;
+    const dispatch = async (n: number): Promise<void> => {
+      if (n <= i) {
+        throw new Error('next() called multiple times.');
+      }
+
+      i = n;
+
+      const mw = this.patternMiddlewares[n];
+      if (!mw) {
+        for (const entry of matched) {
+          entry.handler(ctx.event, ctx.payload);
+          if (entry.once) {
+            const idx = this.patterns.indexOf(entry);
+            if (idx >= 0) {
+              this.patterns.splice(idx, 1);
             }
           }
         }
+        return;
       }
-    }
+
+      await mw(ctx, () => dispatch(n + 1));
+    };
+
+    await dispatch(0);
   }
 
   private getExactSet<K extends keyof E>(event: K): Set<ExactHandler<E, K>> {
@@ -199,21 +226,36 @@ export class TypedEventBus<E extends EventMapBase> {
 
     if (!set) {
       set = new Set();
-      this.exact.set(event, set as any);
+      this.exact.set(event, set);
     }
 
     return set;
   }
 
-  private getPrefixSet(prefix: string): Set<PrefixHandler<E>> {
-    let set = this.prefixHandlers.get(prefix);
+  private insertPatternSorted(entry: PatternEntryInternal<E>): void {
+    let lo = 0;
+    let hi = this.patterns.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >>> 1;
+      if (this.patterns[mid].priority >= entry.priority) {
+        lo = mid + 1;
+      } else {
+        hi = mid;
+      }
+    }
+    this.patterns.splice(lo, 0, entry);
+  }
 
-    if (!set) {
-      set = new Set();
-      this.prefixHandlers.set(prefix, set);
+  private matchPattern(entry: PatternEntryInternal<E>, event: keyof E): boolean {
+    if (entry.kind === 'star') {
+      return true;
     }
 
-    return set;
+    if (typeof event !== 'string') {
+      return false;
+    }
+
+    return event === entry.prefix || event.startsWith(entry.prefixWithColon!);
   }
 
   private parsePattern(p: string): { kind: 'prefix'; prefix: string } | { kind: 'star' } {
@@ -221,17 +263,17 @@ export class TypedEventBus<E extends EventMapBase> {
       return { kind: 'star' };
     }
 
-    if (p.length >= 3 && p.endsWith(':*')) {
+    if (p.endsWith(':*')) {
       const prefix = p.slice(0, -2);
 
-      if (prefix.length === 0) {
-        throw new Error(`Unsupported pattern: ${p}. Prefix cannot be empty.`);
+      if (!prefix) {
+        throw new Error(`Invalid pattern: ${p}.`);
       }
 
       return { kind: 'prefix', prefix };
     }
 
-    throw new Error(`Unsupported pattern: ${p}. Only '*' or 'prefix:*' is supported.`);
+    throw new Error(`Unsupported pattern: ${p}.`);
   }
 
   private async runMiddlewares<K extends keyof E>(ctx: EmitContext<E, K>): Promise<void> {
@@ -251,10 +293,11 @@ export class TypedEventBus<E extends EventMapBase> {
       const mw = this.middlewares[n];
       if (!mw) {
         this.callHandlers(ctx.event, ctx.payload);
+        await this.callPatternHandlers(ctx);
         return;
       }
 
-      await mw(ctx as any, () => dispatch(n + 1));
+      await mw(ctx, () => dispatch(n + 1));
     };
 
     await dispatch(0);
