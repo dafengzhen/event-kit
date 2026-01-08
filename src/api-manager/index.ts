@@ -13,6 +13,7 @@ import {
   removeHeader,
   setHeader,
 } from './utils/helpers.ts';
+import { WxRequestAdapter } from './wx-adapter.ts';
 import { XHRAdapter } from './xhr-adapter.ts';
 
 export {
@@ -30,5 +31,6 @@ export {
   removeHeader,
   setHeader,
   Types,
+  WxRequestAdapter,
   XHRAdapter,
 };

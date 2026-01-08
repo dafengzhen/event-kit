@@ -130,6 +130,7 @@ export class FetchAdapter implements HttpAdapter {
     return {
       data,
       headers,
+      originalResponse: response,
       status: response.status,
       statusText: response.statusText,
     };

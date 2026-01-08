@@ -13,6 +13,7 @@ import {
   prepareRequestBody,
   removeHeader,
   setHeader,
+  WxRequestAdapter,
   XHRAdapter,
 } from './api-manager/index.ts';
 import { TypedEventBus, Types } from './core/index.ts';
@@ -34,5 +35,6 @@ export {
   setHeader,
   TypedEventBus,
   Types,
+  WxRequestAdapter,
   XHRAdapter,
 };

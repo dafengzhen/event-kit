@@ -80,6 +80,7 @@ export interface ApiRequest<
   headers?: Record<string, string>;
   meta?: TMeta;
   method: HttpMethod;
+  originalRequest?: any;
   params?: TParams;
   responseType?: ResponseType;
   signal?: AbortSignal;
@@ -95,6 +96,7 @@ export interface ApiResponse<TData = any, TMeta extends Record<string, unknown> 
   error?: ApiError;
   headers?: Record<string, string>;
   meta?: TMeta;
+  originalResponse?: any;
   request?: ApiRequest;
   status?: number;
   statusText?: string;
@@ -135,6 +137,11 @@ export type SerializeOptions = {
   arrayFormat?: 'brackets' | 'repeat';
   skipEmptyString?: boolean;
 };
+
+export interface WxAdapterConfig {
+  responseTransformer?: <T>(response: any, request: ApiRequest) => Promise<T> | T;
+  responseType?: ResponseType;
+}
 
 export interface XHRAdapterConfig {
   onDownloadProgress?: (evt: ProgressEvent<EventTarget>, request: ApiRequest) => void;
