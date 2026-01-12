@@ -1,0 +1,257 @@
+import type { AsyncCacheEntry, CacheEntry, VersionContext, VersionedObjectOptions, VersionRule } from './types.ts';
+
+import { defaultCacheKey, getPriority, isPromise } from './helpers.ts';
+import { AsyncPredicateError, AsyncRuleValueError, InvalidContextError, InvalidRuleError } from './version-error.ts';
+
+/**
+ * VersionedObject.
+ *
+ * @author dafengzhen
+ */
+export class VersionedObject<T extends object> {
+  private readonly asyncCache = new Map<string, AsyncCacheEntry<T>>();
+
+  private readonly base: T;
+
+  private readonly options: Required<VersionedObjectOptions<T>>;
+
+  private readonly rules: readonly VersionRule<T>[];
+
+  private readonly syncCache = new Map<string, CacheEntry<T>>();
+
+  constructor(base: T, rules: readonly VersionRule<T>[] = [], options: VersionedObjectOptions<T> = {}) {
+    this.base = base;
+    this.rules = [...rules].sort((a, b) => getPriority(b) - getPriority(a));
+    this.options = {
+      cache: options.cache ?? true,
+      cacheKey: options.cacheKey ?? defaultCacheKey,
+      cacheTTL: options.cacheTTL ?? Infinity,
+      freeze: options.freeze ?? false,
+      maxCacheSize: options.maxCacheSize ?? 100,
+      strictMode: options.strictMode ?? false,
+    };
+  }
+
+  addRule(rule: VersionRule<T>): VersionedObject<T> {
+    this.validateRule(rule);
+    return new VersionedObject(this.base, [...this.rules, rule], this.options);
+  }
+
+  addRules(rules: VersionRule<T>[]): VersionedObject<T> {
+    rules.forEach((r) => this.validateRule(r));
+    return new VersionedObject(this.base, [...this.rules, ...rules], this.options);
+  }
+
+  clearCache(): VersionedObject<T> {
+    return new VersionedObject(this.base, this.rules, this.options);
+  }
+
+  clone(): VersionedObject<T> {
+    return new VersionedObject(this.base, this.rules, { ...this.options });
+  }
+
+  async explain(ctx: VersionContext): Promise<{
+    base: T;
+    matched: VersionRule<T>[];
+    result: T;
+  }> {
+    this.validateContext(ctx);
+    const matched = await this.matchRulesAsync(ctx);
+    const result = await this.applyRulesAsync(matched);
+    return { base: this.base, matched, result };
+  }
+
+  getCacheStats() {
+    const sumHits = <T extends { hits: number }>(m: Map<any, T>) => [...m.values()].reduce((s, e) => s + e.hits, 0);
+
+    return {
+      async: {
+        hits: sumHits(this.asyncCache),
+        size: this.asyncCache.size,
+      },
+      sync: {
+        hits: sumHits(this.syncCache),
+        size: this.syncCache.size,
+      },
+    };
+  }
+
+  getRuleCount(): number {
+    return this.rules.length;
+  }
+
+  resolve(ctx: VersionContext): T {
+    this.validateContext(ctx);
+    const key = this.options.cacheKey(ctx);
+
+    if (this.options.cache) {
+      const cached = this.getFromSyncCache(key);
+      if (cached !== undefined) {
+        this.syncCache.get(key)!.hits++;
+        return cached;
+      }
+    }
+
+    const matched = this.matchRulesSync(ctx);
+    const result = this.applyRulesSync(matched);
+
+    this.saveSyncCache(key, result);
+    return result;
+  }
+
+  async resolveAsync(ctx: VersionContext): Promise<T> {
+    this.validateContext(ctx);
+    const key = this.options.cacheKey(ctx);
+
+    if (this.options.cache) {
+      const existing = this.asyncCache.get(key);
+      if (existing) {
+        existing.hits++;
+        return existing.promise;
+      }
+    }
+
+    const task = (async () => {
+      const matched = await this.matchRulesAsync(ctx);
+      return this.applyRulesAsync(matched);
+    })();
+
+    if (this.options.cache) {
+      this.asyncCache.set(key, {
+        hits: 0,
+        promise: task,
+        timestamp: Date.now(),
+      });
+      this.trimCache(this.asyncCache);
+    }
+
+    return task;
+  }
+
+  withOptions(options: Partial<VersionedObjectOptions<T>>): VersionedObject<T> {
+    return new VersionedObject(this.base, this.rules, { ...this.options, ...options });
+  }
+
+  private async applyRulesAsync(rules: VersionRule<T>[]): Promise<T> {
+    const result = { ...this.base };
+
+    for (const rule of rules) {
+      Object.assign(result, await rule.value);
+    }
+
+    return this.options.freeze ? Object.freeze(result) : result;
+  }
+
+  private applyRulesSync(rules: VersionRule<T>[]): T {
+    const result = { ...this.base };
+
+    for (const rule of rules) {
+      if (isPromise(rule.value)) {
+        throw new AsyncRuleValueError();
+      }
+
+      Object.assign(result, rule.value);
+    }
+
+    return this.options.freeze ? Object.freeze(result) : result;
+  }
+
+  private getFromSyncCache(key: string): T | undefined {
+    const entry = this.syncCache.get(key);
+    if (!entry) {
+      return;
+    }
+
+    if (Date.now() - entry.timestamp > this.options.cacheTTL) {
+      this.syncCache.delete(key);
+      return;
+    }
+
+    return entry.value;
+  }
+
+  private async matchRulesAsync(ctx: VersionContext): Promise<VersionRule<T>[]> {
+    const matched: VersionRule<T>[] = [];
+    for (const rule of this.rules) {
+      if (await rule.when(ctx)) {
+        matched.push(rule);
+      }
+    }
+    return matched;
+  }
+
+  private matchRulesSync(ctx: VersionContext): VersionRule<T>[] {
+    const matched: VersionRule<T>[] = [];
+
+    for (const rule of this.rules) {
+      const res = rule.when(ctx);
+      if (isPromise(res)) {
+        throw new AsyncPredicateError();
+      }
+
+      if (res) {
+        matched.push(rule);
+      }
+    }
+
+    return matched;
+  }
+
+  private saveSyncCache(key: string, value: T): void {
+    if (!this.options.cache) {
+      return;
+    }
+
+    this.syncCache.set(key, {
+      hits: 0,
+      timestamp: Date.now(),
+      value,
+    });
+
+    this.trimCache(this.syncCache);
+  }
+
+  private trimCache<K, V extends { hits: number; timestamp: number }>(map: Map<K, V>): void {
+    const excess = map.size - this.options.maxCacheSize;
+    if (excess <= 0) {
+      return;
+    }
+
+    const entries = [...map.entries()].sort(([, a], [, b]) => a.hits - b.hits || a.timestamp - b.timestamp);
+
+    for (let i = 0; i < excess; i++) {
+      map.delete(entries[i][0]);
+    }
+  }
+
+  private validateContext(ctx: VersionContext): void {
+    if (!ctx || typeof ctx !== 'object') {
+      throw new InvalidContextError('Context must be an object.');
+    }
+
+    if (!ctx.version) {
+      throw new InvalidContextError('Context must include a version.');
+    }
+
+    if (this.options.strictMode) {
+      const invalid = Object.keys(ctx).filter((k) => k.startsWith('$'));
+      if (invalid.length) {
+        console.warn(`Reserved context keys: ${invalid.join(', ')}`);
+      }
+    }
+  }
+
+  private validateRule(rule: VersionRule<T>): void {
+    if (typeof rule.when !== 'function') {
+      throw new InvalidRuleError('Rule must define when().');
+    }
+
+    if (rule.value === undefined) {
+      throw new InvalidRuleError('Rule must define value.');
+    }
+
+    if (rule.priority !== undefined && !Number.isInteger(rule.priority)) {
+      throw new InvalidRuleError('Rule priority must be an integer.');
+    }
+  }
+}
