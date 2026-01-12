@@ -14,8 +14,8 @@ export type MaybePromise<T> = Promise<T> | T;
 
 export interface VersionContext {
   [key: string]: any;
-  env?: 'dev' | 'prod' | 'test';
-  platform?: 'android' | 'ios' | 'web';
+  env?: 'dev' | 'prod' | 'test' | string;
+  platform?: 'android' | 'ios' | 'web' | string;
   version: string;
 }
 
