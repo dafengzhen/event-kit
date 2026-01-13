@@ -1,5 +1,6 @@
 import type { VersionContext, VersionRule } from './types.ts';
 
+import { DEFAULT_CACHE_KEY } from './constants.ts';
 import { InvalidVersionError } from './version-error.ts';
 
 export const compareVersion = (a: string, b: string): number => {
@@ -36,14 +37,31 @@ export const compareVersion = (a: string, b: string): number => {
 
 export const isPromise = <T>(v: any): v is Promise<T> => v && typeof v.then === 'function';
 
-export const defaultCacheKey = (ctx: VersionContext): string =>
-  JSON.stringify(
-    Object.keys(ctx)
+const stable = (v: any): any => {
+  if (Array.isArray(v)) {
+    return v.map(stable);
+  }
+
+  if (v && typeof v === 'object') {
+    return Object.keys(v)
       .sort()
-      .reduce((o, k) => {
-        o[k] = ctx[k];
+      .reduce<Record<string, any>>((o, k) => {
+        const val = v[k];
+        if (val !== null && val !== undefined) {
+          o[k] = stable(val);
+        }
         return o;
-      }, {} as any),
-  );
+      }, {});
+  }
+
+  return v;
+};
+
+export const defaultCacheKey = (ctx?: VersionContext): string => {
+  if (!ctx) {
+    return DEFAULT_CACHE_KEY;
+  }
+  return JSON.stringify(stable(ctx));
+};
 
 export const getPriority = (r: VersionRule<any>) => r.priority ?? 0;

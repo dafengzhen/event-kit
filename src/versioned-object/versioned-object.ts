@@ -26,6 +26,7 @@ export class VersionedObject<T extends object> {
       cache: options.cache ?? true,
       cacheKey: options.cacheKey ?? defaultCacheKey,
       cacheTTL: options.cacheTTL ?? Infinity,
+      defaultContext: options.defaultContext ?? { version: 'default' },
       freeze: options.freeze ?? false,
       maxCacheSize: options.maxCacheSize ?? 100,
       strictMode: options.strictMode ?? false,
@@ -50,13 +51,16 @@ export class VersionedObject<T extends object> {
     return new VersionedObject(this.base, this.rules, { ...this.options });
   }
 
-  async explain(ctx: VersionContext): Promise<{
+  async explain(ctx?: VersionContext): Promise<{
     base: T;
     matched: VersionRule<T>[];
     result: T;
   }> {
-    this.validateContext(ctx);
-    const matched = await this.matchRulesAsync(ctx);
+    const realCtx = this.getContext(ctx);
+
+    this.validateContext(realCtx);
+
+    const matched = await this.matchRulesAsync(realCtx);
     const result = await this.applyRulesAsync(matched);
     return { base: this.base, matched, result };
   }
@@ -80,9 +84,12 @@ export class VersionedObject<T extends object> {
     return this.rules.length;
   }
 
-  resolve(ctx: VersionContext): T {
-    this.validateContext(ctx);
-    const key = this.options.cacheKey(ctx);
+  resolve(ctx?: VersionContext): T {
+    const realCtx = this.getContext(ctx);
+
+    this.validateContext(realCtx);
+
+    const key = this.options.cacheKey(realCtx);
 
     if (this.options.cache) {
       const cached = this.getFromSyncCache(key);
@@ -92,16 +99,19 @@ export class VersionedObject<T extends object> {
       }
     }
 
-    const matched = this.matchRulesSync(ctx);
+    const matched = this.matchRulesSync(realCtx);
     const result = this.applyRulesSync(matched);
 
     this.saveSyncCache(key, result);
     return result;
   }
 
-  async resolveAsync(ctx: VersionContext): Promise<T> {
-    this.validateContext(ctx);
-    const key = this.options.cacheKey(ctx);
+  async resolveAsync(ctx?: VersionContext): Promise<T> {
+    const realCtx = this.getContext(ctx);
+
+    this.validateContext(realCtx);
+
+    const key = this.options.cacheKey(realCtx);
 
     if (this.options.cache) {
       const existing = this.asyncCache.get(key);
@@ -112,7 +122,7 @@ export class VersionedObject<T extends object> {
     }
 
     const task = (async () => {
-      const matched = await this.matchRulesAsync(ctx);
+      const matched = await this.matchRulesAsync(realCtx);
       return this.applyRulesAsync(matched);
     })();
 
@@ -154,6 +164,16 @@ export class VersionedObject<T extends object> {
     }
 
     return this.options.freeze ? Object.freeze(result) : result;
+  }
+
+  private getContext(ctx?: VersionContext): VersionContext {
+    const resolved = ctx ?? this.options.defaultContext;
+
+    if (!resolved) {
+      throw new InvalidContextError('Context is required. Provide ctx or defaultContext.');
+    }
+
+    return resolved;
   }
 
   private getFromSyncCache(key: string): T | undefined {

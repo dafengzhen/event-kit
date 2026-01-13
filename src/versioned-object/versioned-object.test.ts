@@ -45,7 +45,7 @@ describe('VersionedObject (sync resolve)', () => {
   test('throws InvalidContextError when ctx is invalid', () => {
     const vo = new VersionedObject<Obj>({ a: 1, b: 'x' });
 
-    expect(() => vo.resolve(null as any)).toThrow(InvalidContextError);
+    expect(() => vo.resolve(null as any)).not.toThrow();
 
     expect(() => vo.resolve({} as any)).toThrow(InvalidContextError);
 

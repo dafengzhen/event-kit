@@ -21,8 +21,9 @@ export interface VersionContext {
 
 export interface VersionedObjectOptions<_T extends object> {
   cache?: boolean;
-  cacheKey?: (ctx: VersionContext) => string;
+  cacheKey?: (ctx?: VersionContext) => string;
   cacheTTL?: number;
+  defaultContext?: VersionContext;
   freeze?: boolean;
   maxCacheSize?: number;
   strictMode?: boolean;

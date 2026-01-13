@@ -1,3 +1,4 @@
+import { DEFAULT_CACHE_KEY } from './constants.ts';
 import { compareVersion, defaultCacheKey, getPriority, isPromise } from './helpers.ts';
 import * as Types from './types.ts';
 import {
@@ -15,6 +16,7 @@ export {
   AsyncPredicateError,
   AsyncRuleValueError,
   compareVersion,
+  DEFAULT_CACHE_KEY,
   defaultCacheKey,
   getPriority,
   InvalidContextError,
